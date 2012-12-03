@@ -56,6 +56,8 @@ class wpmark
 	protected $plugin_basename = 'wpmark/wpmark.php';
 	protected $support_url = 'http://mtekk.us/archives/wordpress/plugins-wordpress/wpmark-';
 	protected $message;
+	protected $dictionary;
+	protected $dictionary150;
 	/**
 	 * Class default constructor
 	 */
@@ -254,6 +256,113 @@ class wpmark
 			}
 		}
 	}
+	/**
+	 * Uses the polar form of the Box-Muller transformation which 
+	 * is both faster and more robust numerically than basic Box-Muller
+	 * transform. To speed up repeated RNG computations, two random values  
+	 * are computed after the while loop and the second one is saved and 
+	 * directly used if the method is called again.
+	 *
+	 * @see http://www.taygeta.com/random/gaussian.html
+	 *
+	 * @return single normal deviate
+	 */
+	function lognormal_rng()
+	{
+		//Values picked to match distribution found by Stuart Brown
+		//@see http://modernl.com/article/how-long-is-the-ideal-blog-post
+		$variance = 0.8;
+		$mean = 6;
+		do
+		{
+			$r1 = mt_rand() / mt_getrandmax();
+			$r2 = mt_rand() / mt_getrandmax();          
+			$x1 = 2.0 * $r1 - 1.0; // between -1.0 and 1.0
+			$x2 = 2.0 * $r2 - 1.0; // between -1.0 and 1.0
+			$w = $x1 * $x1 + $x2 * $x2;      
+		}
+		while ($w >= 1.0);    
+		$w = sqrt((-2.0 * log($w)) / $w);
+		$y1 = $x1 * $w;
+		return floor(exp($mean + $y1 * sqrt($variance)));
+	}
+	function load_dictionary()
+	{
+		if(count($this->dictionary) == 0)
+		{
+			$this->dictionary = file(dirname(__FILE__) . '/5k_top_words_english.txt');
+		}
+		if(count($this->dictionary150) == 0)
+		{
+			$this->dictionary150 = array_slice($this->dictionary, (count($this->dictionary) - 150));
+		}
+	}
+	function generate_tags()
+	{
+		$this->load_dictionary();
+		$length = rand(2,7);
+		$tags = array();
+		for($i = 0; $i < $length; $i++)
+		{
+			$tags[] = ucfirst(trim($this->dictionary150[array_rand($this->dictionary150)]));
+		}
+		return $tags;
+	}
+	function generate_title()
+	{
+		$this->load_dictionary();
+		$length = rand(3,15);
+		$title = "";
+		for($i = 0; $i < $length; $i++)
+		{
+			$title .= trim($this->dictionary[array_rand($this->dictionary)]) . ' ';
+		}
+		return ucwords(trim($title));
+	}
+	function generate_content()
+	{
+		$this->load_dictionary();
+		$words = $this->lognormal_rng();
+		$contents = "<p>";
+		$sentence = "";
+		$last_period = -1;
+		$last_newline = -1;
+		$j = 0;
+		for($i = 0; $i < $words; $i++)
+		{
+			$word = trim($this->dictionary[array_rand($this->dictionary)]);
+			if($last_period + 1 == $i)
+			{
+				$word = ucfirst($word);
+			}
+			if($i - $last_period > rand(1,20))
+			{
+				$last_period = $i;
+				$sentence .= $word . ". ";
+				$j++;
+				if($j - $last_newline > rand(1,20))
+				{
+					$last_newline = $j;
+					$contents .= $sentence . "</p><p>";
+					$sentence = "";
+				}
+			}
+			else
+			{
+				$sentence .= $word . " ";
+			}
+		}
+		//If we exited before the last paragraph/sentence was added, do that now.
+		if($last_newline < $words)
+		{
+			$contents .= trim($sentence);
+			if($last_period + 1 < $words)
+			{
+				$contents .= '.';
+			}
+		}
+		return $contents . '</p>';
+	}
 	function tools_page()
 	{
 		?>
@@ -279,7 +388,20 @@ class wpmark
 				}
 				//Too late to use normal hook, directly display the message
 				$this->message();
-				var_dump($uploadDir);
+				srand(158723957239);
+				mt_srand(1028415237357);
+				echo "<h3>" . $this->generate_title() . "</h3>";
+				echo $this->generate_content();
+				echo implode(', ', $this->generate_tags());
+				echo "<h3>" . $this->generate_title() . "</h3>";
+				echo $this->generate_content();
+				echo implode(', ', $this->generate_tags()) . "<br />";
+				echo implode(', ', $this->dictionary150);
+				/*mt_srand(1028415237357);
+				for($i=0; $i < 100; $i++)
+				{
+					echo $this->lognormal_rng() . "<br />";
+				}*/
 			?>
 			<p class="submit"><a class="button-primary" href="tools.php?page=wpmark&make_cache=1">Setup Cache</a></p>
 		</div>
