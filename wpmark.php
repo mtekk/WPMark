@@ -58,6 +58,7 @@ class wpmark
 	protected $message;
 	protected $dictionary;
 	protected $dictionary150;
+	protected $dictionary300;
 	/**
 	 * Class default constructor
 	 */
@@ -256,6 +257,25 @@ class wpmark
 			}
 		}
 	}
+	function setup_posts()
+	{
+		//Set our rand and mt_rand seeds
+		srand(158723957239);
+		mt_srand(1028415237357);
+		//Let's create 1000 posts
+		for($i = 0; $i < 1000; $i++)
+		{
+			//Our new post array
+			$post = array(
+				'post_type' => 'post',
+				'post_status' => 'publish',
+				'post_title' =>  wp_strip_all_tags($this->generate_title()),
+				'post_content' => wp_kses($this->generate_content(), wp_kses_allowed_html('post')),
+				'tags_input' => implode(', ', $this->generate_tags()),
+				'tax_input' => array('category' => array())
+			);
+		}
+	}
 	/**
 	 * Uses the polar form of the Box-Muller transformation which 
 	 * is both faster and more robust numerically than basic Box-Muller
@@ -296,11 +316,36 @@ class wpmark
 		{
 			$this->dictionary150 = array_slice($this->dictionary, (count($this->dictionary) - 150));
 		}
+		if(count($this->dictionary300) == 0)
+		{
+			$this->dictionary300 = array_slice($this->dictionary, (count($this->dictionary) - 300), 150);
+		}
+	}
+	function generate_categories()
+	{
+		$this->load_dictionary();
+		//Let's go with 9 top categories
+		for($i = 0; $i < 9; $i++)
+		{
+			//Create categories
+			$parent_id = wp_create_category(ucfirst(trim($this->dictionary300[array_rand($this->dictionary300)])));
+			//Pick a random number of 0 to 7 subcategories
+			$length = rand(0, 7);
+			for($j = 0; $j < $length; $j++)
+			{
+				//Create our child category
+				wp_create_category(ucfirst(trim($this->dictionary300[array_rand($this->dictionary300)])), $parent_id);
+			}
+		}
+		//Have to do this to update the category term cache, shouldn't have to do this, it's a WP bug
+		delete_option('category_children');
+		_get_term_hierarchy('category');
+		//clean_term_cache($parent_id, 'category', true);
 	}
 	function generate_tags()
 	{
 		$this->load_dictionary();
-		$length = rand(2,7);
+		$length = rand(2, 7);
 		$tags = array();
 		for($i = 0; $i < $length; $i++)
 		{
@@ -311,7 +356,7 @@ class wpmark
 	function generate_title()
 	{
 		$this->load_dictionary();
-		$length = rand(3,15);
+		$length = rand(3, 15);
 		$title = "";
 		for($i = 0; $i < $length; $i++)
 		{
@@ -335,12 +380,12 @@ class wpmark
 			{
 				$word = ucfirst($word);
 			}
-			if($i - $last_period > rand(1,20))
+			if($i - $last_period > rand(1, 20))
 			{
 				$last_period = $i;
 				$sentence .= $word . ". ";
 				$j++;
-				if($j - $last_newline > rand(1,20))
+				if($j - $last_newline > rand(1, 20))
 				{
 					$last_newline = $j;
 					$contents .= $sentence . "</p><p>";
@@ -368,6 +413,19 @@ class wpmark
 		?>
 		<div class="wrap"><div id="icon-tools" class="icon32"></div><h2><?php _e('WPMark Control Panel', 'wpmark'); ?></h2>
 		<?php
+		srand(158723957239);
+		mt_srand(1028415237357);
+		//Process a make posts request
+		if(isset($_GET['make_cats']))
+		{
+			$this->generate_categories();
+		}
+		//Process a make posts request
+		if(isset($_GET['make_posts']))
+		{
+			$this->setup_posts();
+		}
+		//Process a make cache request
 		if(isset($_GET['make_cache']))
 		{
 			$this->setup_cache();
@@ -388,22 +446,20 @@ class wpmark
 				}
 				//Too late to use normal hook, directly display the message
 				$this->message();
-				srand(158723957239);
-				mt_srand(1028415237357);
-				echo "<h3>" . $this->generate_title() . "</h3>";
+				/*echo "<h3>" . $this->generate_title() . "</h3>";
 				echo $this->generate_content();
 				echo implode(', ', $this->generate_tags());
 				echo "<h3>" . $this->generate_title() . "</h3>";
 				echo $this->generate_content();
 				echo implode(', ', $this->generate_tags()) . "<br />";
-				echo implode(', ', $this->dictionary150);
+				echo implode(', ', $this->dictionary150);*/
 				/*mt_srand(1028415237357);
 				for($i=0; $i < 100; $i++)
 				{
 					echo $this->lognormal_rng() . "<br />";
 				}*/
 			?>
-			<p class="submit"><a class="button-primary" href="tools.php?page=wpmark&make_cache=1">Setup Cache</a></p>
+			<p class="submit"><a class="button-primary" href="tools.php?page=wpmark&make_cats=1">Setup Categories</a> <a class="button-primary" href="tools.php?page=wpmark&make_posts=1">Setup Posts</a> <a class="button-primary" href="tools.php?page=wpmark&make_cache=1">Setup Cache</a></p>
 		</div>
 		<?php
 	}
