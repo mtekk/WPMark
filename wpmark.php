@@ -58,7 +58,6 @@ class wpmark
 	protected $message;
 	protected $dictionary;
 	protected $dictionary150;
-	protected $dictionary300;
 	/**
 	 * Class default constructor
 	 */
@@ -263,7 +262,7 @@ class wpmark
 		srand(158723957239);
 		mt_srand(1028415237357);
 		//Let's create 1000 posts
-		for($i = 0; $i < 1000; $i++)
+		for($i = 0; $i < 3; $i++)
 		{
 			//Our new post array
 			$post = array(
@@ -316,25 +315,48 @@ class wpmark
 		{
 			$this->dictionary150 = array_slice($this->dictionary, (count($this->dictionary) - 150));
 		}
-		if(count($this->dictionary300) == 0)
+	}
+	function generate_featured_image($filename, $width = 624, $height = 351)
+	{
+		srand(158723957236);
+		mt_srand(1028415237357);
+		//Create a GD image
+		$image = imagecreatetruecolor($width, $height);
+		$i = 0;
+		while($i < $width)
 		{
-			$this->dictionary300 = array_slice($this->dictionary, (count($this->dictionary) - 300), 150);
+			//Generate our strip width
+			$strip_width = rand(4,32);
+			//Generate our color
+			$red = mt_rand(0, 255);
+			$green = mt_rand(0, 255);
+			$blue = mt_rand(0, 255);
+			$color = imagecolorallocate($image, $red, $green, $blue);
+			//Paint with the color
+			imagefilledrectangle($image, $i - 1, 0, $i + $strip_width - 1, $height - 1, $color);
+			//Increment by out strip height
+			$i += $strip_width;
 		}
+		imagepng($image, $filename, 9);
 	}
 	function generate_categories()
 	{
+		srand(158723957236);
+		mt_srand(1028415237357);
 		$this->load_dictionary();
+		$top_dictionary = array_slice($this->dictionary, (count($this->dictionary) - 300), 50);
+		$child_dictionary = array_slice($this->dictionary, (count($this->dictionary) - 250), 100);
 		//Let's go with 9 top categories
 		for($i = 0; $i < 9; $i++)
 		{
 			//Create categories
-			$parent_id = wp_create_category(ucfirst(trim($this->dictionary300[array_rand($this->dictionary300)])));
+			$parent_id = wp_create_category(ucfirst(trim($top_dictionary[array_rand($top_dictionary)])));
 			//Pick a random number of 0 to 7 subcategories
 			$length = rand(0, 7);
 			for($j = 0; $j < $length; $j++)
 			{
 				//Create our child category
-				wp_create_category(ucfirst(trim($this->dictionary300[array_rand($this->dictionary300)])), $parent_id);
+				wp_create_category(ucfirst(trim($child_dictionary[array_rand($child_dictionary)])), $parent_id);
 			}
 		}
 		//Have to do this to update the category term cache, shouldn't have to do this, it's a WP bug
@@ -408,15 +430,60 @@ class wpmark
 		}
 		return $contents . '</p>';
 	}
+	function check_categories()
+	{
+		//Have to run this to mimic the real category generator
+		srand(158723957236);
+		mt_srand(1028415237357);
+		$this->load_dictionary();
+		//Setup our parent and child dictionaries as independent subsets of the main dictionary
+		$top_dictionary = array_slice($this->dictionary, (count($this->dictionary) - 300), 50);
+		$child_dictionary = array_slice($this->dictionary, (count($this->dictionary) - 250), 100);
+		//Generate the categories that we should have
+		$categories = array();
+		for($i = 0; $i < 9; $i++)
+		{
+			//Create categories
+			$categories[] = ucfirst(trim($top_dictionary[array_rand($top_dictionary)]));
+			//Pick a random number of 0 to 7 subcategories
+			$length = rand(0, 7);
+			for($j = 0; $j < $length; $j++)
+			{
+				//Create our child category
+				$categories[] = ucfirst(trim($child_dictionary[array_rand($child_dictionary)]));
+			}
+		}
+		//Get the existing categories
+		$args = array(
+			'hide_empty' => false,
+			'hierarchical' => true,
+			'exclude' => '1');
+		$existing_categories = get_categories($args);
+		//Start by ensuring we have the same number of categories as expected categories
+		if(count($existing_categories) === count($categories))
+		{
+			//Check to make sure the categories match, have to traverse by what we have due to the structure
+			foreach($existing_categories as $existing_category)
+			{
+				//If we can't find this category in the expected list, return false
+				if(!in_array($existing_category->name, $categories))
+				{
+					return false;
+				}
+			}
+			//If we made it out of the loop then the categories should match (same number, all found categories exist in expected list)
+			return true;
+		}
+		//Didn't pass
+		return 'shit';
+	}
 	function tools_page()
 	{
 		?>
 		<div class="wrap"><div id="icon-tools" class="icon32"></div><h2><?php _e('WPMark Control Panel', 'wpmark'); ?></h2>
 		<?php
-		srand(158723957239);
-		mt_srand(1028415237357);
-		//Process a make posts request
-		if(isset($_GET['make_cats']))
+		//Process a make posts request, don't process if we have all of our categories
+		if(isset($_GET['make_cats']) && !$this->check_categories())
 		{
 			$this->generate_categories();
 		}
@@ -446,6 +513,22 @@ class wpmark
 				}
 				//Too late to use normal hook, directly display the message
 				$this->message();
+				//Let's go with 9 top categories
+	/*	$this->load_dictionary();
+		$top_dictionary = array_slice($this->dictionary, (count($this->dictionary) - 300), 50);
+		$child_dictionary = array_slice($this->dictionary, (count($this->dictionary) - 250), 100);
+		for($i = 0; $i < 9; $i++)
+		{
+			//Create categories
+			echo ucfirst(trim($top_dictionary[array_rand($top_dictionary)])) . "<br />\n";
+			//Pick a random number of 0 to 7 subcategories
+			$length = rand(0, 7);
+			for($j = 0; $j < $length; $j++)
+			{
+				//Create our child category
+				echo "---" . ucfirst(trim($child_dictionary[array_rand($child_dictionary)])) . "<br />\n";
+			}
+		}*/
 				/*echo "<h3>" . $this->generate_title() . "</h3>";
 				echo $this->generate_content();
 				echo implode(', ', $this->generate_tags());
@@ -458,8 +541,13 @@ class wpmark
 				{
 					echo $this->lognormal_rng() . "<br />";
 				}*/
+				//TODO add check for if the various parts have been setup
 			?>
-			<p class="submit"><a class="button-primary" href="tools.php?page=wpmark&make_cats=1">Setup Categories</a> <a class="button-primary" href="tools.php?page=wpmark&make_posts=1">Setup Posts</a> <a class="button-primary" href="tools.php?page=wpmark&make_cache=1">Setup Cache</a></p>
+			<p class="submit">
+				<a class="<?php if($this->check_categories()){echo 'button disabled';}else{echo 'button-primary';} ?>" href="<?php if($this->check_categories()){echo '#';}else{echo 'tools.php?page=wpmark&make_cats=1';} ?>">Setup Categories</a>
+				<a class="button-primary" href="tools.php?page=wpmark&make_posts=1">Setup Posts</a>
+				<a class="button-primary" href="tools.php?page=wpmark&make_cache=1">Setup Cache</a>
+			</p>
 		</div>
 		<?php
 	}
