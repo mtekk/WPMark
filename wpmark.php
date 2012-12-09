@@ -144,12 +144,12 @@ class wpmark
 		//Load the translations for the tabs
 		wp_localize_script('mtekk_adminkit_tabs', 'objectL10n', array(
 			'mtad_uid' => 'wpmark',
-			'mtad_import' => __('Import', 'breadcrumb-navxt'),
-			'mtad_export' => __('Export', 'breadcrumb-navxt'),
-			'mtad_reset' => __('Reset', 'breadcrumb-navxt'),
+			'mtad_import' => __('Import', 'wpmark'),
+			'mtad_export' => __('Export', 'wpmark'),
+			'mtad_reset' => __('Reset', 'wpmark'),
 		));
 	}
-	function findEncoding($content)
+	function find_encoding($content)
 	{
 		//Find the charset meta attribute
 		preg_match_all('~charset\=.*?(\'|\"|\s)~i', $content, $matches);
@@ -165,11 +165,11 @@ class wpmark
 			return strtoupper($matches[0]);
 		}
 	}
-	function getContent($url, $referer = null, $range = null)
+	function get_content($url, $referer = null, $range = null)
 	{
 		if(function_exists('curl_init'))
 		{
-			$curlOpt = array(
+			$curl_opt = array(
 				CURLOPT_RETURNTRANSFER	=> true,		// Return web page
 				CURLOPT_HEADER			=> false,		// Don't return headers
 				CURLOPT_FOLLOWLOCATION	=> !ini_get('safe_mode'),		// Follow redirects, if not in safemode
@@ -185,17 +185,17 @@ class wpmark
 			//Conditionally set range, if passed in
 			if($range !== null)
 			{
-				$curlOpt[CURLOPT_RANGE] = $range;
+				$curl_opt[CURLOPT_RANGE] = $range;
 			}
 			//Conditionally set referer, if passed in
 			if($referer !== null)
 			{
-				$curlOpt[CURLOPT_REFERER] = $referer;
+				$curl_opt[CURLOPT_REFERER] = $referer;
 			}
 			//Instantiate a CURL context
 			$context = curl_init($url);
 			//Set our options
-			curl_setopt_array($context, $curlOpt); 
+			curl_setopt_array($context, $curl_opt); 
 			//Get our content from CURL
 			$content = curl_exec($context);
 			//Get any errors from CURL
@@ -213,24 +213,24 @@ class wpmark
 	function grab_resources()
 	{
 		$file = 'index.html';
-		if($content = $this->getContent('wordmark'))
+		if($content = $this->get_content(site_url()))
 		{
 			//Convert to UTF-8
-			return array(array('file' => $file, 'contents' => mb_convert_encoding($content, "UTF-8", $this->findEncoding($content))));
+			return array(array('file' => $file, 'contents' => mb_convert_encoding($content, "UTF-8", $this->find_encoding($content))));
 		}
 	}
 	function setup_cache()
 	{
 		//Get the uploads directory
-		$uploadDir = wp_upload_dir();
+		$upload_dir = wp_upload_dir();
 		//Check to ensure the upload directory is writable
-		if(!isset($uploadDir['path']) || !is_writable($uploadDir['path']))
+		if(!isset($upload_dir['path']) || !is_writable($upload_dir['path']))
 		{
 			//Return early if not writable
 			return false;
 		}
 		//Let's check for the wpmark_cache directory
-		$cache = $uploadDir['basedir'] . '/wpmark_cache';
+		$cache = $upload_dir['basedir'] . '/wpmark_cache';
 		if(!is_dir($cache))
 		{
 			//If it doesn't exist, let's make it
@@ -258,12 +258,21 @@ class wpmark
 	}
 	function setup_posts()
 	{
+		//Get the upload location
+		$upload_dir = wp_upload_dir();
+		//Get the existing categories
+		$args = array(
+			'hide_empty' => false,
+			'hierarchical' => true,
+			'exclude' => '1');
+		$existing_categories = get_categories($args);
 		//Set our rand and mt_rand seeds
 		srand(158723957239);
 		mt_srand(1028415237357);
-		//Let's create 1000 posts
-		for($i = 0; $i < 3; $i++)
+		//Let's create 20 posts
+		for($i = 0; $i < 20; $i++)
 		{
+			$category = $existing_categories[array_rand($existing_categories)]->term_id;
 			//Our new post array
 			$post = array(
 				'post_type' => 'post',
@@ -271,8 +280,13 @@ class wpmark
 				'post_title' =>  wp_strip_all_tags($this->generate_title()),
 				'post_content' => wp_kses($this->generate_content(), wp_kses_allowed_html('post')),
 				'tags_input' => implode(', ', $this->generate_tags()),
-				'tax_input' => array('category' => array())
+				'tax_input' => array('category' => array($category))
 			);
+			$post_id = wp_insert_post($post);
+			//Make sure we use a unique filename for the featured image
+			$filename = wp_unique_filename($upload_dir['path'], 'wpmark_post_featured_image.png');
+			//Generate the image/attachment and set it to be the featured image for our post
+			$this->generate_featured_image($post_id, $upload_dir['path'] . "/$filename");
 		}
 	}
 	/**
@@ -316,10 +330,15 @@ class wpmark
 			$this->dictionary150 = array_slice($this->dictionary, (count($this->dictionary) - 150));
 		}
 	}
-	function generate_featured_image($filename, $width = 624, $height = 351)
+	/**
+	 * Generates a random image
+	 * 
+	 * @param string $filename
+	 * @param int $width
+	 * @param int $height
+	 */
+	function generate_random_image($filename, $width = 624, $height = 351)
 	{
-		srand(158723957236);
-		mt_srand(1028415237357);
 		//Create a GD image
 		$image = imagecreatetruecolor($width, $height);
 		$i = 0;
@@ -338,6 +357,38 @@ class wpmark
 			$i += $strip_width;
 		}
 		imagepng($image, $filename, 9);
+	}
+	/**
+	 * This makes an attachment, needs real file location and parent to attac hto
+	 * 
+	 * @param string $filename The file to attach
+	 * @param int $parent The ID of the parent post (generic type) to attach the file to
+	 * @return int $attach_id
+	 */
+	function generate_attachment($parent, $filename)
+	{
+		$wp_filetype = wp_check_filetype(basename($filename), null);
+		$wp_upload_dir = wp_upload_dir();
+		$attachment = array(
+			'guid' => $wp_upload_dir['baseurl'] . _wp_relative_upload_path($filename), 
+			'post_mime_type' => $wp_filetype['type'],
+			'post_title' => preg_replace('/\.[^.]+$/', '', basename($filename)),
+			'post_content' => '',
+			'post_status' => 'inherit'
+		);
+		$attach_id = wp_insert_attachment($attachment, $filename, $parent);
+		$attach_data = wp_generate_attachment_metadata($attach_id, $filename);
+		wp_update_attachment_metadata($attach_id, $attach_data);
+		return $attach_id;
+	}
+	function generate_featured_image($post_id, $filename)
+	{
+		//First we must generate the file
+		$this->generate_random_image($filename, 624, 351);
+		//Now let's attach it to our post
+		$attachment_id = $this->generate_attachment($post_id, $filename);
+		//Now let's set it as the featured image for the post
+		set_post_thumbnail($post_id, $attachment_id);
 	}
 	function generate_categories()
 	{
@@ -490,6 +541,10 @@ class wpmark
 		//Process a make posts request
 		if(isset($_GET['make_posts']))
 		{
+			/*$upload_dir = wp_upload_dir();
+			//Make sure we use a unique filename for the featured image
+			$filename = wp_unique_filename($upload_dir['path'], 'wpmark_post_featured_image.png');
+			$this->generate_featured_image(1, $upload_dir['path'] . "/$filename");*/
 			$this->setup_posts();
 		}
 		//Process a make cache request
