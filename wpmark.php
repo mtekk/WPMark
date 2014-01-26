@@ -42,6 +42,13 @@ if(version_compare(phpversion(), '5.2.0', '<'))
 	}
 	return;
 }
+if(!function_exists('__return_one'))
+{
+	function __return_one()
+	{
+		return '1';
+	}
+}
 /**
  * The plugin class
  */
@@ -65,9 +72,20 @@ class wpmark
 	{
 		//Initilizes l10n domain
 		$this->local();
+		add_action('init', array($this, 'init'));
 		//WordPress Admin interface hook
 		add_action('admin_menu', array($this, 'add_page'));
+		add_action('wp_enqueue_scripts', array($this, 'wp_enqueue_scripts'), 999);
 		//add_action('wp_loaded', array($this, 'wp_loaded'));
+	}
+	function init()
+	{
+		add_filter('comment_flood_filter', __return_false(), 99);
+		add_filter('pre_comment_approved', __return_one(), 99);
+	}
+	function wp_enqueue_scripts()
+	{
+		wp_dequeue_style('twentytwelve-fonts');
 	}
 	/**
 	 * Adds the adminpage the menu and the nice little settings link
@@ -212,12 +230,22 @@ class wpmark
 	}
 	function grab_resources()
 	{
-		$file = 'index.html';
+		$pages = array('171', '69', '161', '225', '355', '331', '117', '395', '219', '103');
+		$resources = array();
 		if($content = $this->get_content(site_url()))
 		{
 			//Convert to UTF-8
-			return array(array('file' => $file, 'contents' => mb_convert_encoding($content, "UTF-8", $this->find_encoding($content))));
+			$resources[] = array('file' => 'index.html', 'contents' => mb_convert_encoding($content, "UTF-8", $this->find_encoding($content)));
 		}
+		foreach($pages as $page)
+		{
+			if($content = $this->get_content(site_url() . '?p=' . $page))
+			{
+				//Convert to UTF-8
+				$resources[] = array('file' => 'post' . $page . '.html', 'contents' => mb_convert_encoding($content, "UTF-8", $this->find_encoding($content)));
+			}
+		}
+		return $resources;
 	}
 	function setup_cache()
 	{
@@ -239,6 +267,7 @@ class wpmark
 		//Ensure the directory is writable
 		if(is_writable($cache))
 		{
+			set_time_limit(0);
 			//Let's do our thing...
 			$pages = $this->grab_resources();
 			//Loop around pages
@@ -266,12 +295,14 @@ class wpmark
 			'hierarchical' => true,
 			'exclude' => '1');
 		$existing_categories = get_categories($args);
+		$stime = time();
 		//Set our rand and mt_rand seeds
 		srand(158723957239);
 		mt_srand(1028415237357);
-		//Let's create 20 posts
-		for($i = 0; $i < 20; $i++)
+		//Let's create 500 posts
+		for($i = 0; $i < 500; $i++)
 		{
+			set_time_limit(0);
 			$category = $existing_categories[array_rand($existing_categories)]->term_id;
 			//Our new post array
 			$post = array(
@@ -280,7 +311,9 @@ class wpmark
 				'post_title' =>  wp_strip_all_tags($this->generate_title()),
 				'post_content' => wp_kses($this->generate_content(), wp_kses_allowed_html('post')),
 				'tags_input' => implode(', ', $this->generate_tags()),
-				'tax_input' => array('category' => array($category))
+				'tax_input' => array('category' => array($category)),
+				'post_date' => date('Y-m-d H:i:s', $stime - ($i * 86400)),
+				'post_date_gmt' => date('Y-m-d H:i:s', $stime - ($i * 86400))
 			);
 			$post_id = wp_insert_post($post);
 			//Make sure we use a unique filename for the featured image
@@ -337,7 +370,7 @@ class wpmark
 	 * @param int $width
 	 * @param int $height
 	 */
-	function generate_random_image($filename, $width = 624, $height = 351)
+	function generate_random_image($filename, $width = 624, $height = 351, $type = 'png')
 	{
 		//Create a GD image
 		$image = imagecreatetruecolor($width, $height);
@@ -356,7 +389,14 @@ class wpmark
 			//Increment by out strip height
 			$i += $strip_width;
 		}
-		imagepng($image, $filename, 9);
+		if($type == 'png')
+		{
+			imagepng($image, $filename, 9);
+		}
+		else
+		{
+			imagejpeg($image, $filename, 90);
+		}
 	}
 	/**
 	 * This makes an attachment, needs real file location and parent to attac hto
@@ -526,7 +566,56 @@ class wpmark
 			return true;
 		}
 		//Didn't pass
-		return 'shit';
+		return false;
+	}
+	/*
+	 * Checks to ensure the number of posts is over 2 (default install)
+	 */
+	function check_posts()
+	{
+		//Get all of the posts
+		$posts = get_posts(array('numberposts' => 10));
+		if(count($posts) > 3)
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+	function twentytwelve_mods()
+	{
+		//Get the upload location
+		$upload_dir = wp_upload_dir();
+		//Get the theme mods option
+		$theme_mods = get_option('theme_mods_twentytwelve');
+		//Make sure we use a unique filename for the featured image
+		$filename = wp_unique_filename($upload_dir['path'], 'wpmark_twentytwelve_header_image.jpg');
+		//First we must generate the file, using JPEG as most headers will be that type (even if it's less efficient)
+		$this->generate_random_image($upload_dir['path'] . "/$filename", 1440, 375, 'jpeg');
+		//Now let's 'attach' it to our post
+		$attachment_id = $this->generate_attachment(0, $upload_dir['path'] . "/$filename");
+		//Update our data
+		$theme_mods['header_image'] = $upload_dir['url'] . "/$filename";
+		$theme_mods['header_textcolor'] = '444';
+		$theme_mods['header_image_data'] = array(
+			'attachment_id' => $attachment_id,
+			'url' => $theme_mods['header_image'],
+			'thumbnail_url' => $theme_mods['header_image'],
+			'width' => 1440,
+			'height' => 375
+		);
+		//Update the setting
+		update_option('theme_mods_twentytwelve', $theme_mods);
+	}
+	function wordpress_mods()
+	{
+		update_option('comments_notify', false);
+		update_option('moderation_notify', false);
+		update_option('page_comments', true);
+		update_option('comments_per_page', 20);
+		update_option('posts_per_page', 10);
 	}
 	function tools_page()
 	{
@@ -539,7 +628,7 @@ class wpmark
 			$this->generate_categories();
 		}
 		//Process a make posts request
-		if(isset($_GET['make_posts']))
+		if(isset($_GET['make_posts']) && !$this->check_posts())
 		{
 			/*$upload_dir = wp_upload_dir();
 			//Make sure we use a unique filename for the featured image
@@ -552,12 +641,21 @@ class wpmark
 		{
 			$this->setup_cache();
 		}
+		if(isset($_GET['make_twentytwelve']))
+		{
+			$this->twentytwelve_mods();
+		}
+		if(isset($_GET['make_wordpress']))
+		{
+			$this->wordpress_mods();
+		}
 		//We exit after the version check if there is an action the user needs to take before saving settings
 		/*if(!$this->version_check(get_option($this->unique_prefix . '_version')))
 		{
 			return;
 		}
-		*/?>
+		*/
+		?>
 			<h3><?php _e('Diagnostics', 'wpmark')?></h3>
 			<?php
 				$uploadDir = wp_upload_dir();
@@ -569,38 +667,13 @@ class wpmark
 				//Too late to use normal hook, directly display the message
 				$this->message();
 				//Let's go with 9 top categories
-	/*	$this->load_dictionary();
-		$top_dictionary = array_slice($this->dictionary, (count($this->dictionary) - 300), 50);
-		$child_dictionary = array_slice($this->dictionary, (count($this->dictionary) - 250), 100);
-		for($i = 0; $i < 9; $i++)
-		{
-			//Create categories
-			echo ucfirst(trim($top_dictionary[array_rand($top_dictionary)])) . "<br />\n";
-			//Pick a random number of 0 to 7 subcategories
-			$length = rand(0, 7);
-			for($j = 0; $j < $length; $j++)
-			{
-				//Create our child category
-				echo "---" . ucfirst(trim($child_dictionary[array_rand($child_dictionary)])) . "<br />\n";
-			}
-		}*/
-				/*echo "<h3>" . $this->generate_title() . "</h3>";
-				echo $this->generate_content();
-				echo implode(', ', $this->generate_tags());
-				echo "<h3>" . $this->generate_title() . "</h3>";
-				echo $this->generate_content();
-				echo implode(', ', $this->generate_tags()) . "<br />";
-				echo implode(', ', $this->dictionary150);*/
-				/*mt_srand(1028415237357);
-				for($i=0; $i < 100; $i++)
-				{
-					echo $this->lognormal_rng() . "<br />";
-				}*/
 				//TODO add check for if the various parts have been setup
 			?>
 			<p class="submit">
 				<a class="<?php if($this->check_categories()){echo 'button disabled';}else{echo 'button-primary';} ?>" href="<?php if($this->check_categories()){echo '#';}else{echo 'tools.php?page=wpmark&make_cats=1';} ?>">Setup Categories</a>
-				<a class="button-primary" href="tools.php?page=wpmark&make_posts=1">Setup Posts</a>
+				<a class="<?php if(!$this->check_categories() || $this->check_posts()){echo 'button disabled';}else{echo 'button-primary';} ?>" href="<?php if(!$this->check_categories() || $this->check_posts()){echo '#';}else{echo 'tools.php?page=wpmark&make_posts=1';} ?>">Setup Posts</a>
+				<a class="button-primary" href="tools.php?page=wpmark&make_twentytwelve=1">Setup Theme</a>
+				<a class="button-primary" href="tools.php?page=wpmark&make_wordpress=1">Setup WordPress Options</a>
 				<a class="button-primary" href="tools.php?page=wpmark&make_cache=1">Setup Cache</a>
 			</p>
 		</div>
