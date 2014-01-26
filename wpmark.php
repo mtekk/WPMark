@@ -10,7 +10,7 @@ License: GPL2
 TextDomain: wpmark
 DomainPath: /languages/
 */
-/*  Copyright 2012  John Havlik  (email : mtekkmonkey@gmail.com)
+/*  Copyright 2012-2014  John Havlik  (email : john.havlik@mtekk.us)
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -75,8 +75,6 @@ class wpmark
 		add_action('init', array($this, 'init'));
 		//WordPress Admin interface hook
 		add_action('admin_menu', array($this, 'add_page'));
-		add_action('wp_enqueue_scripts', array($this, 'wp_enqueue_scripts'), 999);
-		//add_action('wp_loaded', array($this, 'wp_loaded'));
 	}
 	function init()
 	{
@@ -99,10 +97,6 @@ class wpmark
 		{
 			//Register admin_print_styles-$hookname callback
 			add_action('admin_print_styles-' . $hookname, array($this, 'admin_styles'));
-			//Register admin_print_scripts-$hookname callback
-			add_action('admin_print_scripts-' . $hookname, array($this, 'admin_scripts'));
-			//Register Help Output
-			//add_action('load-' . $hookname, array($this, 'help'));
 		}
 	}
 	/**
@@ -149,23 +143,6 @@ class wpmark
 			}
 		}
 		$this->message = array();
-	}
-	/**
-	 * enqueue's the tab js and translation js on the settings page
-	 */
-	function admin_scripts()
-	{
-		//Enqueue ui-tabs
-		wp_enqueue_script('jquery-ui-tabs');
-		//Enqueue the admin tabs javascript
-		wp_enqueue_script('mtekk_adminkit_tabs');
-		//Load the translations for the tabs
-		wp_localize_script('mtekk_adminkit_tabs', 'objectL10n', array(
-			'mtad_uid' => 'wpmark',
-			'mtad_import' => __('Import', 'wpmark'),
-			'mtad_export' => __('Export', 'wpmark'),
-			'mtad_reset' => __('Reset', 'wpmark'),
-		));
 	}
 	function find_encoding($content)
 	{
